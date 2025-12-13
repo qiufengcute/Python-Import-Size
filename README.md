@@ -1,5 +1,10 @@
 # Python Import Size
 
+[![Build Status](https://img.shields.io/github/actions/workflow/status/qiufengcute/qiufengcute/vsix-build-v1.yml?branch=main&label=Build)](https://github.com/qiufengcute/python-import-size/actions)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/qiufeng-vscext.python-import-size)](https://marketplace.visualstudio.com/items?itemName=qiufeng-vscext.python-import-size)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Stars](https://img.shields.io/github/stars/qiufengcute/python-import-size?style=social)](https://github.com/qiufengcute/python-import-size)
+
 Display Python import library sizes inline in VSCode, similar to ErrorLens but for import statements.
 
 ## Features

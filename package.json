@@ -2,7 +2,8 @@
   "name": "python-import-size",
   "displayName": "Python Import Size",
   "description": "Display Python import library sizes inline in VSCode",
-  "version": "0.0.1",
+  "publisher": "qiufeng-vscext",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.107.0"
   },
@@ -12,6 +13,10 @@
     "size",
     "visualization"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qiufengcute/python-import-size.git"
+  }
   "author": "Qiufeng",
   "license": "MIT",
   "categories": [
