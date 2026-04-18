@@ -4,6 +4,10 @@ All notable changes to the "python-import-size" extension will be documented in 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## 1.0.1
+- Add icon
+- Enable normal retrieval of package size
+
 ## 1.0.0
 
 - Initial release

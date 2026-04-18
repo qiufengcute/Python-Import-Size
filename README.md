@@ -18,10 +18,9 @@ This extension analyzes Python import statements and displays the size of each i
 
 Example:
 ```python
-import numpy as np           ≈ 15.23 MB
-import pandas as pd         ≈ 45.67 MB
-from datetime import datetime   ≈ 0 Bytes
-import json                 ≈ 0 Bytes
+import os                   ≈ 39.93 KB
+import json                 ≈ 93.28 KB
+import hashlib              ≈ 9.38 KB
 ```
 
 ## Requirements
@@ -38,15 +37,6 @@ This extension does not add any additional settings.
 - Module size calculation may fail if the module is not installed in the active Python environment
 - Built-in modules show as 0 Bytes since they are part of the Python interpreter
 - Size calculation may take a moment for large packages
-
-## Release Notes
-
-### 1.0.0
-
-Initial release of Python Import Size extension.
-- Displays import library sizes inline with import statements
-- Supports both import styles: `import module` and `from module import item`
-- Automatic updates when document changes
 
 ---
 

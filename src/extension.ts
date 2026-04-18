@@ -1,17 +1,18 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 
+const outputChannel = vscode.window.createOutputChannel('Python Import Size');
+
 let decorationType: vscode.TextEditorDecorationType;
-const importSizesCache = new Map<string, number>(); // Cache for storing import sizes
 
 // Regular expression to identify import statements
 const IMPORT_REGEX = /^(?:\s*)(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+)?import\s+([a-zA-Z_][a-zA-Z0-9_,\s*.]*)(?:\s+.*)?$/;
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('Python Import Size extension is now active!');
+    outputChannel.appendLine('Python Import Size extension is now active!');
 
     // Create decoration type for displaying import sizes
     decorationType = vscode.window.createTextEditorDecorationType({
@@ -92,7 +93,7 @@ async function updateImportSizeDecorations(editor?: vscode.TextEditor) {
                 }
                 
                 // Get size for this module
-                const size = await getModuleSize(moduleName);
+                const size = await getModuleSize(moduleName.split(".")[0]);
                 
                 if (size !== undefined) {
                     const sizeString = formatBytes(size);
@@ -124,11 +125,6 @@ async function updateImportSizeDecorations(editor?: vscode.TextEditor) {
  * Gets the size of a Python module in bytes
  */
 async function getModuleSize(moduleName: string): Promise<number | undefined> {
-    // Check cache first
-    if (importSizesCache.has(moduleName)) {
-        return importSizesCache.get(moduleName);
-    }
-
     try {
         // Skip if it looks like an alias
         if (moduleName.includes(' as ')) {
@@ -136,46 +132,70 @@ async function getModuleSize(moduleName: string): Promise<number | undefined> {
         }
 
         // Try to find the module location using Python
-        const pythonPath = getPythonPath();
         const execResult = await executePythonCommand([
             '-c', 
-            `import ${moduleName}; import os; print(os.path.dirname(${moduleName}.__file__) if hasattr(${moduleName}, '__file__') and ${moduleName}.__file__ is not None else "BUILTIN")`
+            `import ${moduleName}
+import sys
+from pathlib import Path
+
+def is_only_file_package(path):
+    target = Path(path)
+
+    for path_entry in sys.path:
+        if path_entry == "":
+            dir_path = Path.cwd()
+        else:
+            dir_path = Path(path_entry)
+        
+        if not dir_path.is_dir():
+            continue
+        
+        for file in dir_path.iterdir():
+            if not file.is_dir():
+                if file == target:
+                    return True
+
+    return False
+
+try:
+    if is_only_file_package(${moduleName}.__file__):
+        print(${moduleName}.__file__)
+    else:
+        print(${moduleName}.__path__[0])
+except:
+    print("BUILTIN")`
         ]);
 
         // Log for debugging purposes
-        console.log(`Checking module: ${moduleName}`);
-        console.log(`Execution result:`, execResult);
+        outputChannel.appendLine(`Checking module: ${moduleName}`);
+        outputChannel.appendLine(`Execution result: ${execResult}`);
 
         if (execResult.error) {
             // Module likely not installed
-            console.log(`Error importing module ${moduleName}: ${execResult.stderr}`);
+            outputChannel.appendLine(`Error importing module ${moduleName}: ${execResult.stderr}`);
             return undefined;
         }
 
         if (execResult.stdout.trim() === 'BUILTIN' || !execResult.stdout.trim()) {
             // Module is built-in or doesn't have physical files
-            const size = 0;
-            importSizesCache.set(moduleName, size);
-            return size;
+            return undefined;
         } else if (execResult.stdout.trim()) {
             const modulePath = execResult.stdout.trim();
-            console.log(`Found module path for ${moduleName}: ${modulePath}`);
+            outputChannel.appendLine(`Found module path for ${moduleName}: ${modulePath}`);
 
             // Verify the path exists before calculating size
-            if (fs.existsSync(modulePath)) {
-                const size = await calculateDirectorySize(modulePath);
+            try {
+                const size = await calculateSize(modulePath);
                 
-                // Cache the result
-                importSizesCache.set(moduleName, size);
-                console.log(`Calculated size for ${moduleName}: ${size} bytes`);
+                outputChannel.appendLine(`Calculated size for ${moduleName}: ${size} bytes`);
                 return size;
-            } else {
-                console.log(`Module path does not exist: ${modulePath}`);
+            } catch {
+                outputChannel.appendLine(`Module path does not exist: ${modulePath}`);
                 return undefined;
             }
         } else {
             // Unexpected case
-            console.log(`Unexpected output for module ${moduleName}: ${execResult.stdout}`);
+            outputChannel.appendLine(`Unexpected output for module ${moduleName}: ${execResult.stdout}`);
             return undefined;
         }
     } catch (error) {
@@ -223,26 +243,30 @@ function executePythonCommand(args: string[]): Promise<{ stdout: string; stderr:
     });
 }
 
-async function calculateDirectorySize(dirPath: string): Promise<number> {
-    if (!fs.existsSync(dirPath)) {
+async function calculateSize(dirPath: string): Promise<number> {
+    try {
+        const stats = await fs.stat(dirPath);
+        
+        if (stats.isFile()) {
+            return stats.size;
+        }
+        
+        if (stats.isDirectory()) {
+            let totalSize = 0;
+            const entries = await fs.readdir(dirPath);
+            
+            for (const entry of entries) {
+                const fullPath = path.join(dirPath, entry);
+                totalSize += await calculateSize(fullPath);
+            }
+            
+            return totalSize;
+        }
+        
+        return 0;
+    } catch {
         return 0;
     }
-
-    let totalSize = 0;
-    const entries = fs.readdirSync(dirPath);
-
-    for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry);
-        const stat = fs.statSync(fullPath);
-
-        if (stat.isDirectory()) {
-            totalSize += await calculateDirectorySize(fullPath);
-        } else if (stat.isFile()) {
-            totalSize += stat.size;
-        }
-    }
-
-    return totalSize;
 }
 
 function formatBytes(bytes: number): string {
