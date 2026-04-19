@@ -4,7 +4,7 @@
   "description": "Display Python import library sizes inline in VSCode",
   "publisher": "qiufeng-vscext",
   "icon": "icon.png",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "engines": {
     "vscode": "^1.116.0"
   },

@@ -1,6 +1,5 @@
 # Python Import Size
 
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/qiufeng-vscext.python-import-size)](https://marketplace.visualstudio.com/items?itemName=qiufeng-vscext.python-import-size)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Stars](https://img.shields.io/github/stars/qiufengcute/python-import-size?style=flat)](https://github.com/qiufengcute/python-import-size)
 
@@ -31,19 +30,5 @@ import hashlib              ≈ 9.38 KB
 ## Extension Settings
 
 This extension does not add any additional settings.
-
-## Known Issues
-
-- Module size calculation may fail if the module is not installed in the active Python environment
-- Built-in modules show as 0 Bytes since they are part of the Python interpreter
-- Size calculation may take a moment for large packages
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
 
 **Enjoy!**

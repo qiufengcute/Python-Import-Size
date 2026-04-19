@@ -4,15 +4,17 @@ import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-const outputChannel = vscode.window.createOutputChannel('Python Import Size');
+const outputChannel = vscode.window.createOutputChannel('Python Import Size', {
+    "log": true
+});
 
 let decorationType: vscode.TextEditorDecorationType;
 
 // Regular expression to identify import statements
-const IMPORT_REGEX = /^(?:\s*)(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+)?import\s+([a-zA-Z_][a-zA-Z0-9_,\s*.]*)(?:\s+.*)?$/;
+const IMPORT_REGEX = /^(?:\s*)(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+)?import\s+(?:\(([^)]*)|([a-zA-Z_][a-zA-Z0-9_,\s*.]*))/;
 
 export function activate(context: vscode.ExtensionContext) {
-    outputChannel.appendLine('Python Import Size extension is now active!');
+    outputChannel.info('Python Import Size extension is now active!');
 
     // Create decoration type for displaying import sizes
     decorationType = vscode.window.createTextEditorDecorationType({
@@ -82,7 +84,7 @@ async function updateImportSizeDecorations(editor?: vscode.TextEditor) {
                 moduleName = match[1];
             } else { // import ...
                 // Get the first module name if there are multiple imports
-                const importedModules = match[2].split(',')[0].trim().split('.')[0];
+                const importedModules = (match[2] || match[3]).split(',')[0].trim().split('.')[0];
                 moduleName = importedModules.split(/\s+/)[0]; // Handle aliases like "import numpy as np"
             }
             
@@ -157,49 +159,43 @@ def is_only_file_package(path):
 
     return False
 
-try:
-    if is_only_file_package(${moduleName}.__file__):
-        print(${moduleName}.__file__)
-    else:
-        print(${moduleName}.__path__[0])
-except:
-    print("BUILTIN")`
+if is_only_file_package(${moduleName}.__file__):
+    print(${moduleName}.__file__)
+else:
+    print(${moduleName}.__path__[0])`
         ]);
 
         // Log for debugging purposes
-        outputChannel.appendLine(`Checking module: ${moduleName}`);
-        outputChannel.appendLine(`Execution result: ${execResult}`);
+        outputChannel.info(`Checking module: ${moduleName}`);
+        outputChannel.info(`Execution result: ${JSON.stringify(execResult, null, 4)}`);
 
         if (execResult.error) {
             // Module likely not installed
-            outputChannel.appendLine(`Error importing module ${moduleName}: ${execResult.stderr}`);
+            outputChannel.warn(`Error importing module ${moduleName}: ${execResult.stderr}`);
             return undefined;
         }
 
-        if (execResult.stdout.trim() === 'BUILTIN' || !execResult.stdout.trim()) {
-            // Module is built-in or doesn't have physical files
-            return undefined;
-        } else if (execResult.stdout.trim()) {
+        if (execResult.stdout.trim()) {
             const modulePath = execResult.stdout.trim();
-            outputChannel.appendLine(`Found module path for ${moduleName}: ${modulePath}`);
+            outputChannel.info(`Found module path for ${moduleName}: ${modulePath}`);
 
             // Verify the path exists before calculating size
             try {
                 const size = await calculateSize(modulePath);
                 
-                outputChannel.appendLine(`Calculated size for ${moduleName}: ${size} bytes`);
+                outputChannel.info(`Calculated size for ${moduleName}: ${size} bytes`);
                 return size;
             } catch {
-                outputChannel.appendLine(`Module path does not exist: ${modulePath}`);
+                outputChannel.warn(`Module path does not exist: ${modulePath}`);
                 return undefined;
             }
         } else {
             // Unexpected case
-            outputChannel.appendLine(`Unexpected output for module ${moduleName}: ${execResult.stdout}`);
+            outputChannel.warn(`Unexpected output for module ${moduleName}: ${execResult.stdout}`);
             return undefined;
         }
     } catch (error) {
-        console.error(`Exception getting module size for ${moduleName}:`, error);
+        outputChannel.error(`Exception getting module size for ${moduleName}:`, error);
         // Could not determine module size, possibly because:
         // - Module is not installed
         // - Module is built-in
