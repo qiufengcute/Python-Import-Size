@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.0.3
+- Add cache
+- Add mode choose
+
 ## 1.0.2
 - Edit README
 - Add support to more line `from ... import ...`

@@ -4,6 +4,11 @@ import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+interface CacheEntry {
+    size: number;
+    timestamp: number;
+}
+
 const outputChannel = vscode.window.createOutputChannel('Python Import Size', {
     "log": true
 });
@@ -14,7 +19,24 @@ let decorationType: vscode.TextEditorDecorationType;
 const IMPORT_REGEX = /^(?:\s*)(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+)?import\s+(?:\(([^)]*)|([a-zA-Z_][a-zA-Z0-9_,\s*.]*))/;
 
 export function activate(context: vscode.ExtensionContext) {
-    outputChannel.info('Python Import Size extension is now active!');
+    outputChannel.appendLine('=====');
+    outputChannel.info(`Python Import Size extension is now active!(v${context.extension.packageJSON.version})`);
+
+    // Register commands
+    const clearCacheCommand = vscode.commands.registerCommand('python-import-size.clearCache', () => {
+        outputChannel.appendLine('=====');
+        outputChannel.info('Clearing import size cache...');
+        for (const key of context.globalState.keys()) {
+            context.globalState.update(key, undefined);
+        }
+    });
+
+    const refreshCommand = vscode.commands.registerCommand('python-import-size.refresh', () => {
+        updateImportSizeDecorations(context);
+    });
+    
+    context.subscriptions.push(clearCacheCommand);
+    context.subscriptions.push(refreshCommand);
 
     // Create decoration type for displaying import sizes
     decorationType = vscode.window.createTextEditorDecorationType({
@@ -26,24 +48,21 @@ export function activate(context: vscode.ExtensionContext) {
         rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
     });
 
-    // Register command to manually refresh import sizes
-    const refreshCommand = vscode.commands.registerCommand('python-import-size.refresh', () => {
-        updateImportSizeDecorations();
-    });
-    
-    context.subscriptions.push(refreshCommand);
+    let debounceTimer: NodeJS.Timeout;
 
     // Listen for document changes to update decorations automatically
     const docChangeDisposable = vscode.workspace.onDidChangeTextDocument((event) => {
         if (event.document.languageId === 'python') {
-            setTimeout(() => updateImportSizeDecorations(), 500); // Delay to allow full document update
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => updateImportSizeDecorations(context), 500); // Delay to allow full document update
         }
     });
 
     // Listen for editor changes to apply decorations to visible editors
     const editorChangeDisposable = vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (editor && editor.document.languageId === 'python') {
-            setTimeout(() => updateImportSizeDecorations(editor), 100);
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => updateImportSizeDecorations(context, editor), 100);
         }
     });
 
@@ -52,12 +71,12 @@ export function activate(context: vscode.ExtensionContext) {
     // Process currently opened Python documents
     vscode.window.visibleTextEditors.forEach(editor => {
         if (editor.document.languageId === 'python') {
-            updateImportSizeDecorations(editor);
+            updateImportSizeDecorations(context, editor);
         }
     });
 }
 
-async function updateImportSizeDecorations(editor?: vscode.TextEditor) {
+async function updateImportSizeDecorations(context: vscode.ExtensionContext, editor?: vscode.TextEditor) {
     if (!editor) {
         editor = vscode.window.activeTextEditor;
     }
@@ -84,7 +103,7 @@ async function updateImportSizeDecorations(editor?: vscode.TextEditor) {
                 moduleName = match[1];
             } else { // import ...
                 // Get the first module name if there are multiple imports
-                const importedModules = (match[2] || match[3]).split(',')[0].trim().split('.')[0];
+                const importedModules = (match[2] || match[3]).split(',')[0].trim();
                 moduleName = importedModules.split(/\s+/)[0]; // Handle aliases like "import numpy as np"
             }
             
@@ -95,7 +114,7 @@ async function updateImportSizeDecorations(editor?: vscode.TextEditor) {
                 }
                 
                 // Get size for this module
-                const size = await getModuleSize(moduleName.split(".")[0]);
+                const size = await getModuleSize(context, moduleName);
                 
                 if (size !== undefined) {
                     const sizeString = formatBytes(size);
@@ -126,76 +145,85 @@ async function updateImportSizeDecorations(editor?: vscode.TextEditor) {
 /**
  * Gets the size of a Python module in bytes
  */
-async function getModuleSize(moduleName: string): Promise<number | undefined> {
+async function getModuleSize(context: vscode.ExtensionContext, moduleName: string): Promise<number | undefined> {
     try {
+        const config = vscode.workspace.getConfiguration('python-import-size');
+        const modeConfig = config.get<string>('mode');
+        const cacheConfig = config.get<number>('cacheTTL', 5);
+
+        // Log for debugging purposes
+        outputChannel.appendLine('=====');
+        outputChannel.info(`Cache TTL: ${cacheConfig}`);
+        outputChannel.info(`Mode: ${modeConfig}`);
+        outputChannel.info(`Checking module: ${moduleName}`);
+
+        if (modeConfig === 'package') {
+            const temp = moduleName.split('.');
+            moduleName = temp[0] || temp[1];
+        }
+
         // Skip if it looks like an alias
         if (moduleName.includes(' as ')) {
             moduleName = moduleName.split(' as ')[0].trim();
         }
 
-        // Try to find the module location using Python
-        const execResult = await executePythonCommand([
-            '-c', 
-            `import ${moduleName}
-import sys
-from pathlib import Path
+        const cacheSize = context.globalState.get<CacheEntry>(moduleName, {size: -1, timestamp: 0});
+        outputChannel.info(`Cache size: ${cacheSize.size}`);
+        outputChannel.info(`Cache timestamp: ${cacheSize.timestamp}`);
 
-def is_only_file_package(path):
-    target = Path(path)
+        if (cacheSize && new Date().getTime() - new Date(cacheSize.timestamp).getTime() < cacheConfig * 60 * 1000) {
+            outputChannel.info('Returning cached size');
+            return cacheSize.size;
+        } else {
+            outputChannel.info('Calculating size');
 
-    for path_entry in sys.path:
-        if path_entry == "":
-            dir_path = Path.cwd()
-        else:
-            dir_path = Path(path_entry)
-        
-        if not dir_path.is_dir():
-            continue
-        
-        for file in dir_path.iterdir():
-            if not file.is_dir():
-                if file == target:
-                    return True
-
-    return False
-
-if is_only_file_package(${moduleName}.__file__):
-    print(${moduleName}.__file__)
+            // Try to find the module location using Python
+            const execResult = await executePythonCommand([
+                `
+import ${moduleName}
+if '${modeConfig}' == 'package':
+    if hasattr(${moduleName}, '__path__'):
+        print(${moduleName}.__path__[0])
+    else:
+        print(${moduleName}.__file__)
 else:
-    print(${moduleName}.__path__[0])`
-        ]);
+    if hasattr(${moduleName}, '__file__'):
+        print(${moduleName}.__file__)
+    else:
+        print(${moduleName}.__path__[0])
+    `
+            ]);
+            outputChannel.info(`Execution result: ${JSON.stringify(execResult, null, 4)}`);
 
-        // Log for debugging purposes
-        outputChannel.info(`Checking module: ${moduleName}`);
-        outputChannel.info(`Execution result: ${JSON.stringify(execResult, null, 4)}`);
-
-        if (execResult.error) {
-            // Module likely not installed
-            outputChannel.warn(`Error importing module ${moduleName}: ${execResult.stderr}`);
-            return undefined;
-        }
-
-        if (execResult.stdout.trim()) {
-            const modulePath = execResult.stdout.trim();
-            outputChannel.info(`Found module path for ${moduleName}: ${modulePath}`);
-
-            // Verify the path exists before calculating size
-            try {
-                const size = await calculateSize(modulePath);
-                
-                outputChannel.info(`Calculated size for ${moduleName}: ${size} bytes`);
-                return size;
-            } catch {
-                outputChannel.warn(`Module path does not exist: ${modulePath}`);
+            if (execResult.error) {
+                // Module likely not installed
+                outputChannel.warn(`Error importing module ${moduleName}: ${execResult.stderr}`);
                 return undefined;
             }
-        } else {
-            // Unexpected case
-            outputChannel.warn(`Unexpected output for module ${moduleName}: ${execResult.stdout}`);
-            return undefined;
+
+            if (execResult.stdout.trim()) {
+                const modulePath = execResult.stdout.trim();
+                outputChannel.info(`Found module path for ${moduleName}: ${modulePath}`);
+
+                // Verify the path exists before calculating size
+                try {
+                    const size = await calculateSize(modulePath);
+                    context.globalState.update(moduleName, {size, timestamp: new Date().getTime()});
+                    
+                    outputChannel.info(`Calculated size for ${moduleName}: ${size} bytes`);
+                    return size;
+                } catch {
+                    outputChannel.warn(`Module path does not exist: ${modulePath}`);
+                    return undefined;
+                }
+            } else {
+                // Unexpected case
+                outputChannel.warn(`Unexpected output for module ${moduleName}: ${execResult.stdout}`);
+                return undefined;
+            }
         }
     } catch (error) {
-        outputChannel.error(`Exception getting module size for ${moduleName}:`, error);
+        outputChannel.error(`Exception getting module size for ${moduleName}: ${error}`);
         // Could not determine module size, possibly because:
         // - Module is not installed
         // - Module is built-in
@@ -229,7 +257,7 @@ function executePythonCommand(args: string[]): Promise<{ stdout: string; stderr:
     return new Promise((resolve) => {
         const pythonPath = getPythonPath();
         
-        cp.execFile(pythonPath, args, (error: any, stdout: string, stderr: string) => {
+        cp.execFile(pythonPath, ['-c', ...args], (error: any, stdout: string, stderr: string) => {
             if (error) {
                 resolve({ stdout: '', stderr, error });
             } else {

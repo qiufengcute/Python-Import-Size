@@ -27,8 +27,4 @@ import hashlib              ≈ 9.38 KB
 - Python 3.x must be installed and accessible from the command line
 - VS Code must be able to run Python commands to determine module locations and sizes
 
-## Extension Settings
-
-This extension does not add any additional settings.
-
 **Enjoy!**

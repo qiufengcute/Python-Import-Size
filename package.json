@@ -4,7 +4,7 @@
   "description": "Display Python import library sizes inline in VSCode",
   "publisher": "qiufeng-vscext",
   "icon": "icon.png",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "engines": {
     "vscode": "^1.116.0"
   },
@@ -27,6 +27,49 @@
     "onLanguage:python"
   ],
   "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Python Import Size",
+      "properties": {
+        "python-import-size.cacheTTL": {
+          "type": "number",
+          "default": 5,
+          "description": "Cache TTL in mins (0 means no cache)"
+        },
+        "python-import-size.mode": {
+          "type": "string",
+          "default": "package",
+          "description": "Get size mode",
+          "enum": [
+            "package",
+            "module"
+          ]
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "python-import-size.clearCache",
+        "title": "Clear Python Import Size Cache",
+        "category": "Python Import Size"
+      },
+      {
+        "command": "python-import-size.refresh",
+        "title": "Refresh import size",
+        "category": "Python Import Size"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "python-import-size.clearCache"
+        },
+        {
+          "command": "python-import-size.refresh"
+        }
+      ]
+    }
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
