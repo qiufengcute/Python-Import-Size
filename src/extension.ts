@@ -19,12 +19,14 @@ let decorationType: vscode.TextEditorDecorationType;
 const IMPORT_REGEX = /^(?:\s*)(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+)?import\s+(?:\(([^)]*)|([a-zA-Z_][a-zA-Z0-9_,\s*.]*))/;
 
 export function activate(context: vscode.ExtensionContext) {
-    outputChannel.appendLine('=====');
-    outputChannel.info(`Python Import Size extension is now active!(v${context.extension.packageJSON.version})`);
+    outputChannel.appendLine("");
+    outputChannel.appendLine("=== New Logs ===");
+    outputChannel.info(`Python Import Size extension is now active!`);
+    outputChannel.info(`Version: ${context.extension.packageJSON.version}`);
 
     // Register commands
     const clearCacheCommand = vscode.commands.registerCommand('python-import-size.clearCache', () => {
-        outputChannel.appendLine('=====');
+        outputChannel.appendLine("");
         outputChannel.info('Clearing import size cache...');
         for (const key of context.globalState.keys()) {
             context.globalState.update(key, undefined);
@@ -87,6 +89,12 @@ async function updateImportSizeDecorations(context: vscode.ExtensionContext, edi
 
     const document = editor.document;
     const decorations: vscode.DecorationOptions[] = [];
+    const folderPath = path.dirname(editor.document.uri.fsPath);
+    let count = 0;
+
+    outputChannel.appendLine("");
+    outputChannel.info(`Updating import size decorations for ${document.fileName}...`);
+    outputChannel.appendLine(`Folder Path: ${folderPath}`);
 
     for (let i = 0; i < document.lineCount; i++) {
         const line = document.lineAt(i);
@@ -96,6 +104,8 @@ async function updateImportSizeDecorations(context: vscode.ExtensionContext, edi
         const match = text.match(IMPORT_REGEX);
         
         if (match) {
+            count++;
+
             let moduleName: string | null = null;
             
             // Extract module name depending on import type
@@ -114,7 +124,7 @@ async function updateImportSizeDecorations(context: vscode.ExtensionContext, edi
                 }
                 
                 // Get size for this module
-                const size = await getModuleSize(context, moduleName);
+                const size = await getModuleSize(context, moduleName, folderPath);
                 
                 if (size !== undefined) {
                     const sizeString = formatBytes(size);
@@ -138,6 +148,9 @@ async function updateImportSizeDecorations(context: vscode.ExtensionContext, edi
         }
     }
 
+    outputChannel.appendLine("");
+    outputChannel.info(`Update ${count} import statements in ${document.fileName}`);
+
     // Apply decorations to the editor
     editor.setDecorations(decorationType, decorations);
 }
@@ -145,14 +158,15 @@ async function updateImportSizeDecorations(context: vscode.ExtensionContext, edi
 /**
  * Gets the size of a Python module in bytes
  */
-async function getModuleSize(context: vscode.ExtensionContext, moduleName: string): Promise<number | undefined> {
+async function getModuleSize(context: vscode.ExtensionContext, moduleName: string, folderPath: string): Promise<number | undefined> {
     try {
         const config = vscode.workspace.getConfiguration('python-import-size');
         const modeConfig = config.get<string>('mode');
         const cacheConfig = config.get<number>('cacheTTL', 5);
 
         // Log for debugging purposes
-        outputChannel.appendLine('=====');
+        outputChannel.appendLine("");
+        outputChannel.info("=== Info ===");
         outputChannel.info(`Cache TTL: ${cacheConfig}`);
         outputChannel.info(`Mode: ${modeConfig}`);
         outputChannel.info(`Checking module: ${moduleName}`);
@@ -168,6 +182,7 @@ async function getModuleSize(context: vscode.ExtensionContext, moduleName: strin
         }
 
         const cacheSize = context.globalState.get<CacheEntry>(moduleName, {size: -1, timestamp: 0});
+        outputChannel.info(`=== Get Cache ===`);
         outputChannel.info(`Cache size: ${cacheSize.size}`);
         outputChannel.info(`Cache timestamp: ${cacheSize.timestamp}`);
 
@@ -175,12 +190,13 @@ async function getModuleSize(context: vscode.ExtensionContext, moduleName: strin
             outputChannel.info('Returning cached size');
             return cacheSize.size;
         } else {
-            outputChannel.info('Calculating size');
+            outputChannel.info('=== Calculating Size ===');
 
             // Try to find the module location using Python
             const execResult = await executePythonCommand([
                 `
 import ${moduleName}
+print("||||")
 if '${modeConfig}' == 'package':
     if hasattr(${moduleName}, '__path__'):
         print(${moduleName}.__path__[0])
@@ -192,7 +208,7 @@ else:
     else:
         print(${moduleName}.__path__[0])
     `
-            ]);
+            ], folderPath);
             outputChannel.info(`Execution result: ${JSON.stringify(execResult, null, 4)}`);
 
             if (execResult.error) {
@@ -202,7 +218,7 @@ else:
             }
 
             if (execResult.stdout.trim()) {
-                const modulePath = execResult.stdout.trim();
+                const modulePath = execResult.stdout.trim().split(/\r?\n?\|\|\|\|\r?\n/).slice(-1)[0].trim();
                 outputChannel.info(`Found module path for ${moduleName}: ${modulePath}`);
 
                 // Verify the path exists before calculating size
@@ -253,11 +269,11 @@ function getPythonPath(): string {
 
 import * as cp from 'child_process';
 
-function executePythonCommand(args: string[]): Promise<{ stdout: string; stderr: string; error?: any }> {
+function executePythonCommand(args: string[], folderPath: string): Promise<{ stdout: string; stderr: string; error?: any }> {
     return new Promise((resolve) => {
         const pythonPath = getPythonPath();
         
-        cp.execFile(pythonPath, ['-c', ...args], (error: any, stdout: string, stderr: string) => {
+        cp.execFile(pythonPath, ['-c', ...args], {cwd: folderPath}, (error: any, stdout: string, stderr: string) => {
             if (error) {
                 resolve({ stdout: '', stderr, error });
             } else {

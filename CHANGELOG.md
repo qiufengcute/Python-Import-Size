@@ -1,5 +1,8 @@
 # Change Log
 
+## 1.1.0
+- Fix size detection for libraries that print to console during initialization
+
 ## 1.0.3
 - Add cache
 - Add mode choose
@@ -13,5 +16,4 @@
 - Enable normal retrieval of package size
 
 ## 1.0.0
-
 - Initial release
